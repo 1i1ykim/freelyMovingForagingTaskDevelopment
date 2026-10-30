@@ -1,0 +1,79 @@
+# config
+# [bonsai] bonsai node (moving data around: grabbing frame, passing value, writing file, etc.)
+# [zaber] talks to gantry system: zaber package, if not custom node
+# [custom] rig specific deecision (custom node?)
+# [manual] rig dependent setup change
+# [hmm] not sure yet
+
+cameraID = 0 # which camera to open
+frameRate = 0 # how often tracking runs
+controlRate = 0 # how many times/sec for new command for gantry
+
+mmPerPixel = [manual] # how many pixels/knownDistance?
+picCenter = (width / 2, height / 2) # where mice would be sitting: gantry should track this
+axisMapping = [manual] # image lining up with gantry?
+
+minThreshold = 0 # smaller than this is noise
+maxThreshold = 0 # bigger than this is not mice
+threshold = 0 # cutline
+
+sensitiviy = 0 # preventing overshoot and/or lags
+maxSpeed = 0 # cap for glitch and gantry flying
+ignoreError = 0 # errors smaller than this are ignored: preventing constant overcorrection
+maxLostFrames = 0 # how long tracking can fail before giving up and stopping
+
+softLimits = {"x": (x_min, x_max), "y": (y_min, y_max)} # software boundaries, smaller than hard limits just in case
+
+# setup
+
+def setup():
+    gantry = connectZaber() # [zaber]
+    for axis in ["x", "y"]: # checks whether each axis knows where it is, if not bring to known position
+        if not gantry.isHome(axis):
+            gantry.home(axis) 
+        gantry.setLimits(axis, speed=maxSpeed, [hmm]) # controller limit: just in case
+    gantry.moveto(startPosition, wait=True) # moves gantry to session start position, doesn't start until there
+
+    camera = openCamera(cameraID, frameRate) # [bonsai] camera capture node, starts camera (hot)
+    background = average(nEmptyArenaFrames) # [bonsai] background subtraction, build pic of arena by averaging n frames. anything different could be mice.
+    videoFile = openVideoWriter() # [bonsai] video writer node
+    logFile = openCSV() #[bonsai] csv writer node
+    return gantry, camera, background, videoFile, logFile
+
+# tracking: [bonsai] vision nodes? also DLC packages?
+
+def findMice(frame, background):
+    gray = grayscale(frame)
+    diff = abs(gray - background) # subtracts empty arena from current frame. abs in case pixel is either brigher or darker than background.
+    mask = morphologicalOperator(diff > threshold) # mice or not mice, then deletes noise
+    maybeMice = findContours(mask) + regionAnalysis(mask) # groups touching not Background pixels
+
+    if not maybeMice:
+        return None
+    mice = largest(maybeMice) # [bonsai] largest region, caveat: assumes biggest group is mice
+    if not (minThreshold <= mice.area <= maxThreshold): # sanity check on size: too big (hand, shadow, etc.) can be excluded
+        return None
+    return mice.centroid # [bonsai] centroid property, find "center" of mice
+
+# control: [custom][hmm]
+# pixel error, velocity, [hmm]
+
+# run: [bonsai] loop?
+# calls setup returns, track tracking failure, last command time for rate limiting?
+# if fails grab before/next frame and print frame #
+# save cold video before any processing
+# track where gantry now
+# runs tracking, records success or fail
+# count good & bad frames? (tracking failed or fine?)
+    # if bad, mark position missing or average before + after frames?
+# remember when last command
+    # tracking too long? stop
+    # tracking fine? next command
+    # update command (velocity)
+# [hmm]
+# clean up
+    # stop gantry
+    # close camera
+    # close video file and logFile
+    # disconnect gantry (send it home?)
+
